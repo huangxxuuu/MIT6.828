@@ -36,6 +36,7 @@ static void
 printnum(void (*putch)(int, void*), void *putdat,
 	 unsigned long long num, unsigned base, int width, int padc)
 {
+	// 通过递归调用来先打印高位字符
 	// first recursively print all preceding (more significant) digits
 	if (num >= base) {
 		printnum(putch, putdat, num / base, base, width - 1, padc);
@@ -85,16 +86,18 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 	register const char *p;
 	register int ch, err;
 	unsigned long long num;
-	int base, lflag, width, precision, altflag;
+	int base, lflag, width, precision, altflag; // lflag反映要打印的数字的类型 int long (long long)
 	char padc;
 
 	while (1) {
+		// 不是%，意味着不是格式化控制字符，直接输出
 		while ((ch = *(unsigned char *) fmt++) != '%') {
 			if (ch == '\0')
 				return;
 			putch(ch, putdat);
 		}
-
+		// 格式化控制字符对应的控制格式处理部分。
+		// 因为上面有fmt++。所以现在的位置是%的下一个字符
 		// Process a %-escape sequence
 		padc = ' ';
 		width = -1;
@@ -126,9 +129,9 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		case '9':
 			for (precision = 0; ; ++fmt) {
 				precision = precision * 10 + ch - '0';
-				ch = *fmt;
+				ch = *fmt; // 给ch赋 ++fmt后对应的字符
 				if (ch < '0' || ch > '9')
-					break;
+					break; // 这里跳出时ch与fmt是对应的
 			}
 			goto process_precision;
 
@@ -165,7 +168,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			err = va_arg(ap, int);
 			if (err < 0)
 				err = -err;
-			if (err >= MAXERROR || (p = error_string[err]) == NULL)
+			if (err >= MAXERROR || (p = error_string[err]) == NULL) // 不在错误列表中有解释字符串的，直接打印错误号
 				printfmt(putch, putdat, "error %d", err);
 			else
 				printfmt(putch, putdat, "%s", p);
@@ -176,14 +179,15 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			if ((p = va_arg(ap, char *)) == NULL)
 				p = "(null)";
 			if (width > 0 && padc != '-')
-				for (width -= strnlen(p, precision); width > 0; width--)
+				// strnlen 统计字符串p的长度。返回长度与precision的较小值
+				for (width -= strnlen(p, precision); width > 0; width--) // 计算左侧的空格在左侧填充padc
 					putch(padc, putdat);
 			for (; (ch = *p++) != '\0' && (precision < 0 || --precision >= 0); width--)
-				if (altflag && (ch < ' ' || ch > '~'))
+				if (altflag && (ch < ' ' || ch > '~')) // ascii 可打印字符的第一个和最后一个。超出这个范围打印'?'
 					putch('?', putdat);
 				else
 					putch(ch, putdat);
-			for (; width > 0; width--)
+			for (; width > 0; width--) // 若字符串打印完width仍有剩余，填充空格
 				putch(' ', putdat);
 			break;
 
@@ -206,10 +210,9 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		// (unsigned) octal
 		case 'o':
 			// Replace this with your code.
-			putch('X', putdat);
-			putch('X', putdat);
-			putch('X', putdat);
-			break;
+			num = getuint(&ap, lflag);
+			base = 8;
+			goto number;
 
 		// pointer
 		case 'p':
@@ -234,7 +237,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			break;
 
 		// unrecognized escape sequence - just print it literally
-		default:
+		default: // 未识别的格式化控制字符。则不进行解析，普通打印。对于已解析的部分，退回去
 			putch('%', putdat);
 			for (fmt--; fmt[-1] != '%'; fmt--)
 				/* do nothing */;

@@ -47,7 +47,7 @@ printnum(void (*putch)(int, void*), void *putdat,
 	}
 
 	// then print this (the least significant) digit
-	putch("0123456789abcdef"[num % base], putdat);
+	putch("0123456789abcdef"[num % base] | (padc & 0xff00 ), putdat);
 }
 
 // Get an unsigned int of various possible sizes from a varargs list,
@@ -87,6 +87,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 	register int ch, err;
 	unsigned long long num;
 	int base, lflag, width, precision, altflag; // lflag反映要打印的数字的类型 int long (long long)
+	int attri = 0;
 	char padc;
 
 	while (1) {
@@ -94,7 +95,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 		while ((ch = *(unsigned char *) fmt++) != '%') {
 			if (ch == '\0')
 				return;
-			putch(ch, putdat);
+			putch(ch | attri, putdat);
 		}
 		// 格式化控制字符对应的控制格式处理部分。
 		// 因为上面有fmt++。所以现在的位置是%的下一个字符
@@ -160,7 +161,7 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 
 		// character
 		case 'c':
-			putch(va_arg(ap, int), putdat);
+			putch(va_arg(ap, int) | attri, putdat);
 			break;
 
 		// error message
@@ -181,21 +182,21 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			if (width > 0 && padc != '-')
 				// strnlen 统计字符串p的长度。返回长度与precision的较小值
 				for (width -= strnlen(p, precision); width > 0; width--) // 计算左侧的空格在左侧填充padc
-					putch(padc, putdat);
+					putch(padc | attri, putdat);
 			for (; (ch = *p++) != '\0' && (precision < 0 || --precision >= 0); width--)
 				if (altflag && (ch < ' ' || ch > '~')) // ascii 可打印字符的第一个和最后一个。超出这个范围打印'?'
-					putch('?', putdat);
+					putch('?' | attri, putdat);
 				else
-					putch(ch, putdat);
+					putch(ch | attri, putdat);
 			for (; width > 0; width--) // 若字符串打印完width仍有剩余，填充空格
-				putch(' ', putdat);
+				putch(' ' | attri, putdat);
 			break;
 
 		// (signed) decimal
 		case 'd':
 			num = getint(&ap, lflag);
 			if ((long long) num < 0) {
-				putch('-', putdat);
+				putch('-' | attri, putdat);
 				num = -(long long) num;
 			}
 			base = 10;
@@ -216,8 +217,8 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 
 		// pointer
 		case 'p':
-			putch('0', putdat);
-			putch('x', putdat);
+			putch('0' | attri, putdat);
+			putch('x' | attri, putdat);
 			num = (unsigned long long)
 				(uintptr_t) va_arg(ap, void *);
 			base = 16;
@@ -228,17 +229,57 @@ vprintfmt(void (*putch)(int, void*), void *putdat, const char *fmt, va_list ap)
 			num = getuint(&ap, lflag);
 			base = 16;
 		number:
-			printnum(putch, putdat, num, base, width, padc);
+			printnum(putch, putdat, num, base, width, padc | attri);
 			break;
 
 		// escaped '%' character
 		case '%':
-			putch(ch, putdat);
+			putch(ch | attri, putdat);
 			break;
+		
+		// 设置打印字符属性
+		case 'B': // 背景色
+			ch = *fmt;
+			switch(ch){
+				case 'B': attri |= 0x1000; break; // 设置蓝色
+				case 'G': attri |= 0x2000; break; // 设置绿色
+				case 'R': attri |= 0x4000; break; // 设置红色
+				case 'I': attri |= 0x8000; break; // 设置高亮
+				case 'b': attri &= ~0x1000; break; // 取消蓝色
+				case 'g': attri &= ~0x2000; break; // 取消绿色
+				case 'r': attri &= ~0x4000; break; // 取消红色
+				case 'i': attri &= ~0x8000; break; // 取消高亮
+			}
+			fmt++;
+			ch = *fmt;
+			break;
+			
+		case 'F': // 前景色
+			ch = *fmt;
+			switch(ch){
+				case 'B': attri |= 0x0100; break; // 设置蓝色
+				case 'G': attri |= 0x0200; break; // 设置绿色
+				case 'R': attri |= 0x0400; break; // 设置红色
+				case 'I': attri |= 0x0800; break; // 设置高亮
+				case 'b': attri &= ~0x0100; break; // 取消蓝色
+				case 'g': attri &= ~0x0200; break; // 取消绿色
+				case 'r': attri &= ~0x0400; break; // 取消红色
+				case 'i': attri &= ~0x0800; break; // 取消高亮
+			}
+			fmt++;
+			ch = *fmt;
+			break;
+		
+		case 'C': // 清空格式
+			ch = *fmt;
+			attri = 0;
+			break;
+			
+			
 
 		// unrecognized escape sequence - just print it literally
 		default: // 未识别的格式化控制字符。则不进行解析，普通打印。对于已解析的部分，退回去
-			putch('%', putdat);
+			putch('%' | attri, putdat);
 			for (fmt--; fmt[-1] != '%'; fmt--)
 				/* do nothing */;
 			break;

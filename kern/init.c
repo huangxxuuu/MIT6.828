@@ -45,6 +45,8 @@ i386_init(void)
     //cprintf("H%x Wo%s", 57616, &i);
 	
 	//cprintf("x=%dy=%x", 3);
+	cprintf("%BB123456 %BR123456%Br %BI123456\n");
+	cprintf("%FB123456 %FR123456%Fr %FI123456\n");
 
 	// Drop into the kernel monitor.
 	while (1)
